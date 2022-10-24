@@ -14,6 +14,7 @@ import org.junit.Test;
 import org.littleshoot.proxy.impl.DefaultHttpProxyServer;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.matchers.Times;
+import org.openqa.selenium.Capabilities;
 import org.openqa.selenium.Proxy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.firefox.FirefoxDriver;
@@ -72,7 +73,7 @@ public class EndToEndStoppingTest {
         proxy.setHttpProxy(proxyStr);
         proxy.setSslProxy(proxyStr);
 
-        DesiredCapabilities capability = DesiredCapabilities.firefox();
+        DesiredCapabilities capability = new DesiredCapabilities();
         capability.setCapability(CapabilityType.PROXY, proxy);
 
         String urlString = "http://www.yahoo.com/";
@@ -176,7 +177,7 @@ public class EndToEndStoppingTest {
         proxy.setHttpProxy(proxyStr);
         proxy.setSslProxy(proxyStr);
 
-        DesiredCapabilities capability = DesiredCapabilities.firefox();
+        DesiredCapabilities capability = new DesiredCapabilities();
         capability.setCapability(CapabilityType.PROXY, proxy);
 
         final String urlString = "http://www.yahoo.com/";

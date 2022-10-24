@@ -1,0 +1,19 @@
+version: "3.2"
+services:
+
+  build:
+    image: maven:3.8.6-jdk-8-slim
+    command: bash -c "apt-get update &&
+      apt-get install git -y &&
+      git config user.name 'VGS Deploy Bot' &&
+      git config user.email 'dev@vgs.io' &&
+      mvn -T 1C -U clean install -DskipTests -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false -Dmaven.test.skip=true --threads 5 -B"
+    working_dir: /app
+    environment:
+      AWS_PROFILE: dev/vault
+      AWS_DEFAULT_REGION: us-west-2
+      AWS_REGION: us-west-2
+    volumes:
+      - .:/app/
+      - ~/.m2/:/root/.m2/
+      - ~/.aws/:/root/.aws/:ro

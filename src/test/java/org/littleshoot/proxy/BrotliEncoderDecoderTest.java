@@ -25,6 +25,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
@@ -39,7 +40,6 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.http.util.EntityUtils;
-import org.eclipse.jetty.http.HttpHeaders;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
@@ -92,6 +92,7 @@ public class BrotliEncoderDecoderTest extends AbstractProxyTest {
   private static final Logger log = LoggerFactory.getLogger(BrotliEncoderDecoderTest.class);
 
   static class BrotliDecompressingEntity extends DecompressingEntity {
+
     BrotliDecompressingEntity(HttpEntity entity) {
       super(entity, inputStream -> {
         byte[] isAsBytes = IOUtils.toByteArray(inputStream);
@@ -101,7 +102,9 @@ public class BrotliEncoderDecoderTest extends AbstractProxyTest {
     }
 
     public static boolean usesBrotliContentEncoding(Header contentEncoding) {
-      if (contentEncoding == null) return false;
+      if (contentEncoding == null) {
+        return false;
+      }
       return Arrays.stream(contentEncoding.getElements())
           .anyMatch(
               codec -> BrotliHandler.BROTLI_HTTP_CONTENT_CODING.equalsIgnoreCase(codec.getName())
@@ -168,7 +171,8 @@ public class BrotliEncoderDecoderTest extends AbstractProxyTest {
 
 
     @Override
-    public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException {
+    public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response)
+        throws IOException {
       if (acceptEncodingParser.acceptBrotliEncoding(request)) {
         response.addHeader("Content-Encoding", BROTLI_HTTP_CONTENT_CODING);
         baseRequest.setHandled(true);
@@ -194,7 +198,9 @@ public class BrotliEncoderDecoderTest extends AbstractProxyTest {
     ContextHandlerCollection handlers = new ContextHandlerCollection();
     addHandler(handlers, "/brotli", new BrotliHandler());
     s.setHandler(handlers);
-    if (enableHttps) s = enableHttpsForServer(s);
+    if (enableHttps) {
+      s = enableHttpsForServer(s);
+    }
 
     try {
       s.start();
@@ -301,7 +307,8 @@ public class BrotliEncoderDecoderTest extends AbstractProxyTest {
     }
   }
 
-  private HttpResponse runBrotliScenarioWithClient(CloseableHttpClient httpclient) throws IOException, URISyntaxException {
+  private HttpResponse runBrotliScenarioWithClient(CloseableHttpClient httpclient)
+      throws IOException, URISyntaxException {
     HttpEntity responseEntity;
     URL textFileUrl = new URL(webHost + "/brotli");
     HttpGet httpget = new HttpGet(textFileUrl.toURI());

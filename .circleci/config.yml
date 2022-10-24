@@ -1,30 +1,32 @@
 job-defaults: &job-defaults
   working_directory: &working_directory
-    ~/LittleProxy
-  test_results_directory: &test_results_directory
-    /tmp/test-results
+    ~/app
   environment:
     - RELEASE_BRANCH: vgs-edition
     - AWS_DEFAULT_REGION: us-west-2
     - AWS_REGION: us-west-2
-    - AWS_PROFILE: vgs-dev
+    - AWS_ACCOUNT_ID: "883127560329"
+    - AWS_PROFILE: dev/vault
+    - VGS_DEV_ARTIFACT_BUCKET: vault-dev-01-audits-01-artifact-19k6160zpr44j
 
 # Set up AWS environment
 setup-env: &setup-env
   run:
     name: Setup Environment
-    command: ./scripts/env.sh
+    command: |
+      ./scripts/env.sh
+#      ./scripts/setup-maven-m2-mirrors.sh
 
 # Template to save Maven dependency cache to restore it in another jobs
 save-maven-cache: &save-maven-cache
   save_cache:
-    key: LittleProxy-{{ checksum "pom.xml" }}
+    key: LittleProxy-{{ .Environment.CACHE_VERSION }}-{{ checksum "pom.xml" }}
     paths:
       - ~/.m2
 
 restore-maven-cache: &restore-maven-cache
   restore_cache:
-    key: LittleProxy-{{ checksum "pom.xml" }}
+    key: LittleProxy-{{ .Environment.CACHE_VERSION }}-{{ checksum "pom.xml" }}
 
 # Persists workspace so it can be attached in another jobs as soon as it was checked out and built
 persist-workspace: &persist-workspace
@@ -36,50 +38,26 @@ attach-workspace: &attach-workspace
   attach_workspace:
     at: *working_directory
 
+machine-setup: &machine-setup
+  machine:
+    docker_layer_caching: true
+    image: ubuntu-2204:2022.04.1
+
 # === JOBS ===
-version: 2
+version: 2.1
 jobs:
   build:
+    <<: *machine-setup
     <<: *job-defaults
-    machine:
-      enabled: true
     steps:
       - checkout
       - <<: *setup-env
       - <<: *restore-maven-cache
       - run:
           name: Maven Clean Package
-          command: |
-            unset AWS_ACCESS_KEY_ID; unset AWS_SECRET_ACCESS_KEY; mvn clean dependency:go-offline install -Dmaven.test.skip=true --threads 5 -B
+          command: docker-compose run build
       - <<: *save-maven-cache
       - <<: *persist-workspace
-  # Validates that all PRs that are part of a release have links to ClubHouse work items on them.
-  validate-production:
-    <<: *job-defaults
-    docker:
-    - image: docker:17.05.0-ce-git
-    steps:
-    - checkout
-    - setup_remote_docker
-    - run:
-        name: Validate a production build
-        command: |
-          docker login -u="$QUAY_DOCKER_LOGIN" -p="$QUAY_DOCKER_LOGIN_PASSWORD" quay.io
-          docker run -e GITHUB_API_TOKEN=$GITHUB_API_TOKEN quay.io/verygoodsecurity/ghch:$GHCH_VERSION validate --repo-name verygoodsecurity/$CIRCLE_PROJECT_REPONAME --tag-name $CIRCLE_TAG --tag-regex "(.*)"
-
-  # Marks all linked ClubHouse work items as complete.
-  complete-production:
-    <<: *job-defaults
-    docker:
-    - image: docker:17.05.0-ce-git
-    steps:
-    - checkout
-    - setup_remote_docker
-    - run:
-        name: Complete a production build
-        command: |
-          docker login -u="$QUAY_DOCKER_LOGIN" -p="$QUAY_DOCKER_LOGIN_PASSWORD" quay.io
-          docker run -e GITHUB_API_TOKEN=$GITHUB_API_TOKEN -e CLUBHOUSE_API_TOKEN=$CLUBHOUSE_API_TOKEN quay.io/verygoodsecurity/ghch:$GHCH_VERSION complete --repo-name verygoodsecurity/$CIRCLE_PROJECT_REPONAME --tag-name $CIRCLE_TAG --tag-regex "(.*)"
 
   test:
     <<: *job-defaults
@@ -104,9 +82,8 @@ jobs:
           path: target/site/aggregate-third-party-report.html
 
   deployment:
+    <<: *machine-setup
     <<: *job-defaults
-    machine:
-      enabled: true
     steps:
       - <<: *attach-workspace
       - <<: *restore-maven-cache
@@ -116,9 +93,8 @@ jobs:
           command: |
             unset AWS_ACCESS_KEY_ID; unset AWS_SECRET_ACCESS_KEY; mvn deploy -DskipTests=true
   release:
+    <<: *machine-setup
     <<: *job-defaults
-    machine:
-      enabled: true
     steps:
       - <<: *attach-workspace
       - <<: *restore-maven-cache
@@ -148,7 +124,7 @@ workflows:
   build_test_and_deploy:
     jobs:
       - build:
-          context: artifact-publisher
+          context: circleci
           filters:
             tags:
               only: /.*/
@@ -166,29 +142,12 @@ workflows:
           filters:
             branches:
               only: vgs-edition
-      - validate-production:
-          context: ghch
-          filters:
-            tags:
-              only: /.*/
-            branches:
-              ignore: /.*/
       - release:
           context: artifact-publisher
           requires:
             - test
-            - validate-production
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /.*/
-      - complete-production:
-          context: ghch
-          requires:
-            - release
-          filters:
-            tags:
-              only: /.*/
-            branches:
-              ignore: /.*/

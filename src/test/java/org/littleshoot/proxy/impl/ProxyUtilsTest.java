@@ -4,12 +4,16 @@ import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.DefaultHttpMessage;
 import io.netty.handler.codec.http.DefaultHttpResponse;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import lombok.SneakyThrows;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -52,6 +56,7 @@ public class ProxyUtilsTest {
         assertEquals(expectedViaHeader, viaHeaders.get(0));
     }
 
+    @SneakyThrows
     @Test
     public void testCommaSeparatedHeaderValues() {
         DefaultHttpMessage message;
@@ -77,7 +82,7 @@ public class ProxyUtilsTest {
 
         // a single header value with extra spaces
         message = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, " chunked  , ");
+        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, "chunked,");
         commaSeparatedHeaders = ProxyUtils.getAllCommaSeparatedHeaderValues(HttpHeaders.Names.TRANSFER_ENCODING, message);
         assertThat(commaSeparatedHeaders, contains("chunked"));
 
@@ -111,8 +116,8 @@ public class ProxyUtilsTest {
         // multiple comma-separated values in multiple header lines with spurious spaces, commas,
         // and tabs (horizontal tabs are defined as optional whitespace in RFC 7230 section 3.2.3)
         message = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, " gzip,compress,");
-        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, "\tdeflate\t,  gzip, ");
+        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, "gzip,compress,");
+        message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, "deflate\t, gzip,");
         message.headers().add(HttpHeaders.Names.TRANSFER_ENCODING, ",gzip,,deflate,\t, ,");
         commaSeparatedHeaders = ProxyUtils.getAllCommaSeparatedHeaderValues(HttpHeaders.Names.TRANSFER_ENCODING, message);
         assertThat(commaSeparatedHeaders, contains("gzip", "compress", "deflate", "gzip", "gzip", "deflate"));
