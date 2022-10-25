@@ -506,6 +506,14 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         allChannels.add(channel);
     }
 
+    protected void unregisterChannel(Channel channel) {
+        if (channel.isOpen()) {
+            // Unlikely to happen but JIC
+            channel.close();
+        }
+        allChannels.remove(channel);
+    }
+
     /**
      * Closes all channels opened by this proxy server.
      *
