@@ -447,4 +447,17 @@ public interface HttpProxyServerBootstrap {
      * @param blockHttpPipelining
      */
     HttpProxyServerBootstrap withHttpPipeliningBlocked(boolean blockHttpPipelining);
+
+
+    /**
+     * <p>
+     * Specify whether to enable logging in acceptor workers
+     * </p>
+     *
+     * <p>
+     * Default = false
+     * </p> 
+     * @param acceptorLoggingEnabled
+     */
+    HttpProxyServerBootstrap withAcceptorLoggingEnabled(boolean acceptorLoggingEnabled);
 }

@@ -14,6 +14,7 @@ import io.netty.channel.group.ChannelGroupFuture;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.udt.nio.NioUdtProvider;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.traffic.GlobalTrafficShapingHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import org.littleshoot.proxy.ActivityTracker;
@@ -134,6 +135,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
     private final boolean allowRequestsToOriginServer;
     private final RateLimiter rateLimiter;
     private final boolean httpPipeliningBlocked;
+    private final boolean acceptorLoggingEnabled;
 
     /**
      * The alias or pseudonym for this proxy, used when adding the Via header.
@@ -276,7 +278,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             int maxChunkSize,
             boolean allowRequestsToOriginServer,
             RateLimiter rateLimiter,
-            boolean httpPipeliningBlocked) {
+            boolean httpPipeliningBlocked,
+            boolean acceptorLoggingEnabled) {
         this.serverGroup = serverGroup;
         this.transportProtocol = transportProtocol;
         this.requestedAddress = requestedAddress;
@@ -322,6 +325,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         this.allowRequestsToOriginServer = allowRequestsToOriginServer;
         this.rateLimiter = rateLimiter;
         this.httpPipeliningBlocked = httpPipeliningBlocked;
+        this.acceptorLoggingEnabled = acceptorLoggingEnabled;
     }
 
     /**
@@ -592,6 +596,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             default:
                 throw new UnknownTransportProtocolException(transportProtocol);
         }
+        if(acceptorLoggingEnabled) {
+          serverBootstrap.handler(new LoggingHandler());
+        }
         serverBootstrap.childHandler(initializer);
         ChannelFuture future = serverBootstrap.bind(requestedAddress)
                 .addListener(new ChannelFutureListener() {
@@ -709,6 +716,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private RateLimiter rateLimiter = new NoOpRateLimiter();
         private ProxyThreadPoolsObserver threadPoolObserver = new NoOpProxyThreadPoolsObserver();
         private boolean httpPipeliningBlocked = false;
+        private boolean acceptorLoggingEnabled = false;
 
         private DefaultHttpProxyServerBootstrap() {
         }
@@ -1037,6 +1045,12 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             return this;
         }
 
+        @Override
+        public HttpProxyServerBootstrap withAcceptorLoggingEnabled(boolean acceptorLoggingEnabled) {
+            this.acceptorLoggingEnabled = acceptorLoggingEnabled;
+            return this;
+        }
+
         private DefaultHttpProxyServer build() {
             final ServerGroup serverGroup;
 
@@ -1061,7 +1075,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     idleConnectionTimeout, activityTrackers, connectTimeout,
                     serverResolver, readThrottleBytesPerSecond, writeThrottleBytesPerSecond,
                     localAddress, proxyAlias, maxInitialLineLength, maxHeaderSize, maxChunkSize,
-                    allowRequestToOriginServer, rateLimiter, httpPipeliningBlocked);
+                    allowRequestToOriginServer, rateLimiter, httpPipeliningBlocked, acceptorLoggingEnabled);
         }
 
         private InetSocketAddress determineListenAddress() {
