@@ -14,6 +14,7 @@ import io.netty.channel.group.ChannelGroupFuture;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.udt.nio.NioUdtProvider;
+import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.traffic.GlobalTrafficShapingHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
@@ -596,8 +597,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             default:
                 throw new UnknownTransportProtocolException(transportProtocol);
         }
-        if(acceptorLoggingEnabled) {
-          serverBootstrap.handler(new LoggingHandler());
+        if(acceptorLoggingEnabled) { 
+          LOG.info("enabling acceptor logging");  
+          serverBootstrap.handler(new LoggingHandler(LogLevel.INFO));
         }
         serverBootstrap.childHandler(initializer);
         ChannelFuture future = serverBootstrap.bind(requestedAddress)
