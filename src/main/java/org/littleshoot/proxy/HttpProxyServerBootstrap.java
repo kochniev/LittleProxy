@@ -460,4 +460,19 @@ public interface HttpProxyServerBootstrap {
      * @param acceptorLoggingEnabled
      */
     HttpProxyServerBootstrap withAcceptorLoggingEnabled(boolean acceptorLoggingEnabled);
+
+
+    /**
+     * <p>
+     * Specify whether to use separate event loop for processing
+     * </p>
+     * 
+     * <p>
+     *   Default = false
+     * </p>
+     * @param separateProcessingEventLoop
+     * 
+     * @return this
+     */
+    HttpProxyServerBootstrap withSeparateProcessingEventLoop(boolean separateProcessingEventLoop);
 }

@@ -1,10 +1,17 @@
 package org.littleshoot.proxy.impl;
 
+import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_CHUNK;
+import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_INITIAL;
+import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_PROXY_AUTHENTICATION;
+import static org.littleshoot.proxy.impl.ConnectionState.DISCONNECT_REQUESTED;
+import static org.littleshoot.proxy.impl.ConnectionState.NEGOTIATING_CONNECT;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoop;
 import io.netty.handler.codec.compression.BrotliHttpContentCompressor;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -23,22 +30,9 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.handler.traffic.GlobalTrafficShapingHandler;
 import io.netty.util.ReferenceCounted;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
-import org.apache.commons.lang3.StringUtils;
-import org.littleshoot.proxy.ActivityTracker;
-import org.littleshoot.proxy.DefaultFailureHttpResponseComposer;
-import org.littleshoot.proxy.ExceptionHandler;
-import org.littleshoot.proxy.FailureHttpResponseComposer;
-import org.littleshoot.proxy.ratelimit.RateLimiter;
-import org.littleshoot.proxy.FlowContext;
-import org.littleshoot.proxy.FullFlowContext;
-import org.littleshoot.proxy.HttpFilters;
-import org.littleshoot.proxy.HttpFiltersAdapter;
-import org.littleshoot.proxy.ProxyAuthenticator;
-import org.littleshoot.proxy.SslEngineSource;
-
-import javax.net.ssl.SSLSession;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
@@ -52,12 +46,19 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
-
-import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_CHUNK;
-import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_INITIAL;
-import static org.littleshoot.proxy.impl.ConnectionState.AWAITING_PROXY_AUTHENTICATION;
-import static org.littleshoot.proxy.impl.ConnectionState.DISCONNECT_REQUESTED;
-import static org.littleshoot.proxy.impl.ConnectionState.NEGOTIATING_CONNECT;
+import javax.net.ssl.SSLSession;
+import org.apache.commons.lang3.StringUtils;
+import org.littleshoot.proxy.ActivityTracker;
+import org.littleshoot.proxy.DefaultFailureHttpResponseComposer;
+import org.littleshoot.proxy.ExceptionHandler;
+import org.littleshoot.proxy.FailureHttpResponseComposer;
+import org.littleshoot.proxy.FlowContext;
+import org.littleshoot.proxy.FullFlowContext;
+import org.littleshoot.proxy.HttpFilters;
+import org.littleshoot.proxy.HttpFiltersAdapter;
+import org.littleshoot.proxy.ProxyAuthenticator;
+import org.littleshoot.proxy.SslEngineSource;
+import org.littleshoot.proxy.ratelimit.RateLimiter;
 
 /**
  * <p>
@@ -136,6 +137,8 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
      * Tracks whether or not this ClientToProxyConnection is current doing MITM.
      */
     private volatile boolean mitming = false;
+    
+    private final boolean separateProcessingEventLoop;
 
     private AtomicBoolean authenticated = new AtomicBoolean();
 
@@ -145,15 +148,18 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
             final DefaultHttpProxyServer proxyServer,
             SslEngineSource sslEngineSource,
             boolean authenticateClients,
-            ChannelPipeline pipeline,
-            GlobalTrafficShapingHandler globalTrafficShapingHandler) {
+            Channel ch,
+            GlobalTrafficShapingHandler globalTrafficShapingHandler,
+            boolean separateProcessingEventLoop) {
         super(AWAITING_INITIAL, proxyServer, false);
+        this.channel = ch;
+        this.separateProcessingEventLoop = separateProcessingEventLoop;
 
-        initChannelPipeline(pipeline);
+        initChannelPipeline(ch.pipeline());
 
         if (sslEngineSource != null) {
             LOG.debug("Enabling encryption of traffic from client to proxy");
-            encrypt(pipeline, sslEngineSource.newSslEngine(),
+            encrypt(ch.pipeline(), sslEngineSource.newSslEngine(),
                     authenticateClients)
                     .addListener(
                             new GenericFutureListener<Future<? super Channel>>() {
@@ -808,6 +814,7 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
                 proxyServer.getMaxChunkSize()));
 
         pipeline.addLast("brotli_compressor", new BrotliHttpContentCompressor());
+        
 
         // Enable aggregation for filtering if necessary
         int numberOfBytesToBuffer = proxyServer.getFiltersSource()
@@ -822,6 +829,7 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
 
         if (proxyServer.getRequestTracer() != null) {
             pipeline.addLast("requestTracerHandler", new RequestTracerHandler(this));
+            pipeline.addLast(new ReadLoggingHandler(proxyServer.getRequestTracer()));
         }
 
         if (proxyServer.getGlobalStateHandler() != null) {
@@ -840,8 +848,16 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
             pipeline.addLast("outboundGlobalStateHandler", new OutboundGlobalStateHandler(this));
         }
 
-        pipeline.addLast("handler", this);
-
+        if(separateProcessingEventLoop) {
+            EventLoop eventExecutor = this.proxyServer.getServerGroup()
+                .getClientToProxyProcessingPoolForTransport(proxyServer.getTransportProtocol())
+                .next();
+            EventExecutor globalStateWrapperEventLoop = new GlobalStateWrapperEventLoop(
+                this, eventExecutor.next());
+            pipeline.addLast(globalStateWrapperEventLoop, "handler", this);
+        } else {
+            pipeline.addLast("handler", this);
+        }
     }
 
     /**
@@ -1445,7 +1461,10 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
         if (channel == null) {
             return null;
         }
-        return (InetSocketAddress) channel.remoteAddress();
+        if(channel.remoteAddress() instanceof InetSocketAddress) {
+            return (InetSocketAddress) channel.remoteAddress();
+        }
+        return null;
     }
 
     private FlowContext flowContext() {

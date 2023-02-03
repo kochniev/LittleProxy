@@ -274,6 +274,11 @@ public class ServerGroup {
         return getThreadPoolsForProtocol(protocol).getClientToProxyWorkerPool();
     }
 
+
+    public EventLoopGroup getClientToProxyProcessingPoolForTransport(TransportProtocol protocol) {
+        return getThreadPoolsForProtocol(protocol).getClientToProxyProcessingPool();
+    }
+
     /**
      * Retrieves the proxy-to-server worker thread pool for the specified protocol. Initializes the pool if it has not
      * yet been initialized.

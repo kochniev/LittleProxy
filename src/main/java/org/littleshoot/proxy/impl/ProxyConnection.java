@@ -762,7 +762,7 @@ abstract class ProxyConnection<I extends HttpObject> extends
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             try {
-                proxyServer.getRequestTracer().start(clientToProxyConnection.channel);
+                proxyServer.getRequestTracer().start(clientToProxyConnection.channel, msg);
             } catch (Throwable t) {
                 LOG.warn("Unable to start tracing request", t);
             } finally {
@@ -777,7 +777,7 @@ abstract class ProxyConnection<I extends HttpObject> extends
                 super.write(ctx, msg, promise);
             } finally {
                 try {
-                    proxyServer.getRequestTracer().finish(clientToProxyConnection.channel);
+                    proxyServer.getRequestTracer().finish(clientToProxyConnection.channel, msg);
                 } catch (Throwable t) {
                     LOG.warn("Unable to finish request tracing", t);
                 }

@@ -18,35 +18,6 @@ import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.traffic.GlobalTrafficShapingHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
-import org.littleshoot.proxy.ActivityTracker;
-import org.littleshoot.proxy.GlobalStateHandler;
-import org.littleshoot.proxy.DefaultFailureHttpResponseComposer;
-import org.littleshoot.proxy.monitoring.NoOpProxyThreadPoolsObserver;
-import org.littleshoot.proxy.monitoring.ProxyThreadPoolsObserver;
-import org.littleshoot.proxy.ratelimit.NoOpRateLimiter;
-import org.littleshoot.proxy.ratelimit.RateLimiter;
-import org.littleshoot.proxy.ChainedProxyManager;
-import org.littleshoot.proxy.DefaultHostResolver;
-import org.littleshoot.proxy.DnsSecServerResolver;
-import org.littleshoot.proxy.HostResolver;
-import org.littleshoot.proxy.HttpFilters;
-import org.littleshoot.proxy.HttpFiltersSource;
-import org.littleshoot.proxy.HttpFiltersSourceAdapter;
-import org.littleshoot.proxy.HttpProxyServer;
-import org.littleshoot.proxy.HttpProxyServerBootstrap;
-import org.littleshoot.proxy.FailureHttpResponseComposer;
-import org.littleshoot.proxy.MitmManager;
-import org.littleshoot.proxy.MitmManagerFactory;
-import org.littleshoot.proxy.ProxyAuthenticator;
-import org.littleshoot.proxy.ExceptionHandler;
-import org.littleshoot.proxy.RequestTracer;
-import org.littleshoot.proxy.SslEngineSource;
-import org.littleshoot.proxy.TransportProtocol;
-import org.littleshoot.proxy.UnknownTransportProtocolException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.net.ssl.SSLEngine;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -57,6 +28,35 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.SSLEngine;
+import lombok.Getter;
+import org.littleshoot.proxy.ActivityTracker;
+import org.littleshoot.proxy.ChainedProxyManager;
+import org.littleshoot.proxy.DefaultFailureHttpResponseComposer;
+import org.littleshoot.proxy.DefaultHostResolver;
+import org.littleshoot.proxy.DnsSecServerResolver;
+import org.littleshoot.proxy.ExceptionHandler;
+import org.littleshoot.proxy.FailureHttpResponseComposer;
+import org.littleshoot.proxy.GlobalStateHandler;
+import org.littleshoot.proxy.HostResolver;
+import org.littleshoot.proxy.HttpFilters;
+import org.littleshoot.proxy.HttpFiltersSource;
+import org.littleshoot.proxy.HttpFiltersSourceAdapter;
+import org.littleshoot.proxy.HttpProxyServer;
+import org.littleshoot.proxy.HttpProxyServerBootstrap;
+import org.littleshoot.proxy.MitmManager;
+import org.littleshoot.proxy.MitmManagerFactory;
+import org.littleshoot.proxy.ProxyAuthenticator;
+import org.littleshoot.proxy.RequestTracer;
+import org.littleshoot.proxy.SslEngineSource;
+import org.littleshoot.proxy.TransportProtocol;
+import org.littleshoot.proxy.UnknownTransportProtocolException;
+import org.littleshoot.proxy.monitoring.NoOpProxyThreadPoolsObserver;
+import org.littleshoot.proxy.monitoring.ProxyThreadPoolsObserver;
+import org.littleshoot.proxy.ratelimit.NoOpRateLimiter;
+import org.littleshoot.proxy.ratelimit.RateLimiter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <p>
@@ -101,8 +101,10 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
      * Our {@link ServerGroup}. Multiple proxy servers can share the same
      * ServerGroup in order to reuse threads and other such resources.
      */
+    @Getter
     private final ServerGroup serverGroup;
 
+    @Getter
     private final TransportProtocol transportProtocol;
     /*
     * The address that the server will attempt to bind to.
@@ -137,6 +139,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
     private final RateLimiter rateLimiter;
     private final boolean httpPipeliningBlocked;
     private final boolean acceptorLoggingEnabled;
+    private final boolean separateProcessingEventLoop;
 
     /**
      * The alias or pseudonym for this proxy, used when adding the Via header.
@@ -280,7 +283,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             boolean allowRequestsToOriginServer,
             RateLimiter rateLimiter,
             boolean httpPipeliningBlocked,
-            boolean acceptorLoggingEnabled) {
+            boolean acceptorLoggingEnabled,
+            boolean separateProcessingEventLoop) {
         this.serverGroup = serverGroup;
         this.transportProtocol = transportProtocol;
         this.requestedAddress = requestedAddress;
@@ -327,6 +331,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         this.rateLimiter = rateLimiter;
         this.httpPipeliningBlocked = httpPipeliningBlocked;
         this.acceptorLoggingEnabled = acceptorLoggingEnabled;
+        this.separateProcessingEventLoop = separateProcessingEventLoop;
     }
 
     /**
@@ -459,7 +464,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     maxChunkSize,
                     allowRequestsToOriginServer,
                     rateLimiter,
-                    httpPipeliningBlocked);
+                    httpPipeliningBlocked,
+                    separateProcessingEventLoop);
     }
 
     @Override
@@ -574,8 +580,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                         DefaultHttpProxyServer.this,
                         sslEngineSource,
                         authenticateSslClients,
-                        ch.pipeline(),
-                        globalTrafficShapingHandler);
+                        ch,
+                        globalTrafficShapingHandler, 
+                        separateProcessingEventLoop);
             };
         };
         switch (transportProtocol) {
@@ -719,6 +726,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private ProxyThreadPoolsObserver threadPoolObserver = new NoOpProxyThreadPoolsObserver();
         private boolean httpPipeliningBlocked = false;
         private boolean acceptorLoggingEnabled = false;
+        
+        private boolean separateProcessingEventLoop = false;
 
         private DefaultHttpProxyServerBootstrap() {
         }
@@ -750,7 +759,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                 int maxChunkSize,
                 boolean allowRequestToOriginServer,
                 RateLimiter rateLimiter,
-                boolean httpPipeliningBlocked) {
+                boolean httpPipeliningBlocked,
+                boolean separateProcessingEventLoop) {
             this.serverGroup = serverGroup;
             this.transportProtocol = transportProtocol;
             this.requestedAddress = requestedAddress;
@@ -783,6 +793,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         	this.allowRequestToOriginServer = allowRequestToOriginServer;
           this.rateLimiter = rateLimiter;
           this.httpPipeliningBlocked = httpPipeliningBlocked;
+          this.separateProcessingEventLoop = separateProcessingEventLoop;
         }
 
         private DefaultHttpProxyServerBootstrap(Properties props) {
@@ -1053,6 +1064,12 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             return this;
         }
 
+        @Override
+        public HttpProxyServerBootstrap withSeparateProcessingEventLoop(boolean separateProcessingEventLoop) {
+            this.separateProcessingEventLoop = separateProcessingEventLoop;
+            return this;
+        }
+
         private DefaultHttpProxyServer build() {
             final ServerGroup serverGroup;
 
@@ -1077,7 +1094,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     idleConnectionTimeout, activityTrackers, connectTimeout,
                     serverResolver, readThrottleBytesPerSecond, writeThrottleBytesPerSecond,
                     localAddress, proxyAlias, maxInitialLineLength, maxHeaderSize, maxChunkSize,
-                    allowRequestToOriginServer, rateLimiter, httpPipeliningBlocked, acceptorLoggingEnabled);
+                    allowRequestToOriginServer, rateLimiter, httpPipeliningBlocked, 
+                    acceptorLoggingEnabled, separateProcessingEventLoop);
         }
 
         private InetSocketAddress determineListenAddress() {

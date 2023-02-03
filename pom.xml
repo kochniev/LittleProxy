@@ -32,7 +32,7 @@
         <httpclient.version>4.5.13</httpclient.version>
         <jetty-server.version>8.1.17.v20150415</jetty-server.version>
         <mockito-core.version>2.7.12</mockito-core.version>
-        <mockserver-netty.version>3.10.4</mockserver-netty.version>
+        <mockserver-netty.version>5.14.0</mockserver-netty.version>
         <selenium-java.version>2.53.1</selenium-java.version>
 
         <!--  Build Properties      -->
@@ -439,6 +439,12 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-exec</artifactId>
             <version>${commons-exec.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
             <scope>test</scope>
         </dependency>
 

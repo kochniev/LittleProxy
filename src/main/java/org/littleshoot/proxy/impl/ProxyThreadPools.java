@@ -3,8 +3,6 @@ package org.littleshoot.proxy.impl;
 import com.google.common.collect.ImmutableList;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
-
-import io.netty.util.concurrent.EventExecutor;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.List;
 
@@ -21,11 +19,17 @@ public class ProxyThreadPools {
     private final NioEventLoopGroup clientToProxyAcceptorPool;
 
     /**
-     * These {@link EventLoopGroup}s process incoming requests to the
+     * These {@link EventLoopGroup}s read incoming requests to the
      * proxies. A different EventLoopGroup is used for each
      * TransportProtocol, since these have to be configured differently.
      */
     private final NioEventLoopGroup clientToProxyWorkerPool;
+
+    /**
+     * These {@link EventLoopGroup}s process incoming requests to the
+     * proxies.
+     */
+    private final NioEventLoopGroup clientToProxyProcessingPool;
 
     /**
      * These {@link EventLoopGroup}s are used for making outgoing
@@ -39,6 +43,9 @@ public class ProxyThreadPools {
 
         clientToProxyWorkerPool = new NioEventLoopGroup(incomingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ClientToProxyWorker", serverGroupId), selectorProvider);
         clientToProxyWorkerPool.setIoRatio(90);
+        
+        clientToProxyProcessingPool = new NioEventLoopGroup(incomingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ClientToProxyProcessorWorker", serverGroupId), selectorProvider);
+        clientToProxyProcessingPool.setIoRatio(90);
 
         proxyToServerWorkerPool = new NioEventLoopGroup(outgoingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ProxyToServerWorker", serverGroupId), selectorProvider);
         proxyToServerWorkerPool.setIoRatio(90);
@@ -53,6 +60,10 @@ public class ProxyThreadPools {
 
     public NioEventLoopGroup getClientToProxyAcceptorPool() {
         return clientToProxyAcceptorPool;
+    }
+
+    public NioEventLoopGroup getClientToProxyProcessingPool() {
+        return clientToProxyProcessingPool;
     }
 
     public NioEventLoopGroup getClientToProxyWorkerPool() {
