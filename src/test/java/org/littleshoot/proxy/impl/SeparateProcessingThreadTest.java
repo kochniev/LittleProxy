@@ -1,5 +1,8 @@
 package org.littleshoot.proxy.impl;
 
+import com.tngtech.java.junit.dataprovider.DataProvider;
+import com.tngtech.java.junit.dataprovider.DataProviderRunner;
+import com.tngtech.java.junit.dataprovider.UseDataProvider;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -20,6 +23,7 @@ import org.eclipse.jetty.util.ConcurrentHashSet;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.littleshoot.proxy.HttpFilters;
 import org.littleshoot.proxy.HttpFiltersAdapter;
 import org.littleshoot.proxy.HttpFiltersSourceAdapter;
@@ -32,6 +36,7 @@ import org.mockserver.model.HttpResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@RunWith(DataProviderRunner.class)
 public class SeparateProcessingThreadTest {
 
   private static final Logger log = LoggerFactory.getLogger(SeparateProcessingThreadTest.class);
@@ -52,8 +57,21 @@ public class SeparateProcessingThreadTest {
     mockServerPort = mockServer.getPort();
   }
 
+
+  @DataProvider
+  public static Object[][] threadsCount() {
+    return new Object[][]{
+        {8, 8},
+        {8,16}
+    };
+  }
+
+
   @Test
-  public void verifyCorrectChannelContextForRequestTest() throws InterruptedException {
+  @UseDataProvider("threadsCount")
+  public void verifyCorrectChannelContextForRequestTest(
+      int clientToProxyReaderThreadsCount,
+      int clientToProxyProcessingThreadsCount) throws InterruptedException {
 
     AttributeKey<String> traceKey = AttributeKey.valueOf("trace");
     Set<String> readThreadTraces = new ConcurrentHashSet<>();
@@ -62,7 +80,10 @@ public class SeparateProcessingThreadTest {
     Set<String> successResponseTraces = new ConcurrentHashSet<>();
     this.proxyServer = DefaultHttpProxyServer.bootstrap()
         .withPort(0)
-        .withThreadPoolConfiguration(new ThreadPoolConfiguration().withSeparateProcessingEventLoop(true))
+        .withThreadPoolConfiguration(new ThreadPoolConfiguration()
+            .withSeparateProcessingEventLoop(true)
+            .withClientToProxyWorkerThreads(clientToProxyReaderThreadsCount)
+            .withClientToProxyWorkerProcessingThreads(clientToProxyProcessingThreadsCount))
         .withAcceptorLoggingEnabled(true)
         .withRequestTracer(new RequestTracer() {
           @Override
@@ -167,7 +188,6 @@ public class SeparateProcessingThreadTest {
     Set<String> readMessageLogs = appender.getLogsContains("Read message. trace id");
     Assert.assertEquals(requestsAmount, readMessageLogs.size());
   }
-
 
   @Test
   public void readingHappenedSeparateOfProcessingTest() throws Exception {
