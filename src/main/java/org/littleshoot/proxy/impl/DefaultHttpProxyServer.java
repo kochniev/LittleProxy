@@ -464,8 +464,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     maxChunkSize,
                     allowRequestsToOriginServer,
                     rateLimiter,
-                    httpPipeliningBlocked,
-                    separateProcessingEventLoop);
+                    httpPipeliningBlocked);
     }
 
     @Override
@@ -715,8 +714,10 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private long writeThrottleBytesPerSecond;
         private InetSocketAddress localAddress;
         private String proxyAlias;
+        private boolean separateProcessingEventLoop = false;
         private int clientToProxyAcceptorThreads = ServerGroup.DEFAULT_INCOMING_ACCEPTOR_THREADS;
         private int clientToProxyWorkerThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
+        private int clientToProxyWorkerProcessingThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
         private int proxyToServerWorkerThreads = ServerGroup.DEFAULT_OUTGOING_WORKER_THREADS;
         private int maxInitialLineLength = MAX_INITIAL_LINE_LENGTH_DEFAULT;
         private int maxHeaderSize = MAX_HEADER_SIZE_DEFAULT;
@@ -727,7 +728,6 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private boolean httpPipeliningBlocked = false;
         private boolean acceptorLoggingEnabled = false;
         
-        private boolean separateProcessingEventLoop = false;
 
         private DefaultHttpProxyServerBootstrap() {
         }
@@ -759,8 +759,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                 int maxChunkSize,
                 boolean allowRequestToOriginServer,
                 RateLimiter rateLimiter,
-                boolean httpPipeliningBlocked,
-                boolean separateProcessingEventLoop) {
+                boolean httpPipeliningBlocked) {
             this.serverGroup = serverGroup;
             this.transportProtocol = transportProtocol;
             this.requestedAddress = requestedAddress;
@@ -793,7 +792,6 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         	this.allowRequestToOriginServer = allowRequestToOriginServer;
           this.rateLimiter = rateLimiter;
           this.httpPipeliningBlocked = httpPipeliningBlocked;
-          this.separateProcessingEventLoop = separateProcessingEventLoop;
         }
 
         private DefaultHttpProxyServerBootstrap(Properties props) {
@@ -1036,7 +1034,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         public HttpProxyServerBootstrap withThreadPoolConfiguration(ThreadPoolConfiguration configuration) {
             this.clientToProxyAcceptorThreads = configuration.getAcceptorThreads();
             this.clientToProxyWorkerThreads = configuration.getClientToProxyWorkerThreads();
+            this.clientToProxyWorkerProcessingThreads = configuration.getClientToProxyWorkerProcessingThreads();
             this.proxyToServerWorkerThreads = configuration.getProxyToServerWorkerThreads();
+            this.separateProcessingEventLoop = configuration.isSeparateProcessingEventLoop();
             return this;
         }
 
@@ -1064,12 +1064,6 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             return this;
         }
 
-        @Override
-        public HttpProxyServerBootstrap withSeparateProcessingEventLoop(boolean separateProcessingEventLoop) {
-            this.separateProcessingEventLoop = separateProcessingEventLoop;
-            return this;
-        }
-
         private DefaultHttpProxyServer build() {
             final ServerGroup serverGroup;
 
@@ -1080,6 +1074,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                 serverGroup = new ServerGroup(name,
                     clientToProxyAcceptorThreads,
                     clientToProxyWorkerThreads,
+                    separateProcessingEventLoop,
+                    clientToProxyWorkerProcessingThreads,
                     proxyToServerWorkerThreads,
                     threadPoolObserver
                 );

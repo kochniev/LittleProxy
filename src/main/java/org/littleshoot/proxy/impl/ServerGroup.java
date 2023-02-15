@@ -60,7 +60,9 @@ public class ServerGroup {
 
     private final int incomingAcceptorThreads;
     private final int incomingWorkerThreads;
+    private final int incomingWorkerProcessingThreads;
     private final int outgoingWorkerThreads;
+    private final boolean separateProcessingEventLoop;
 
     /**
      * List of all servers registered to use this ServerGroup. Any access to this list should be synchronized using the
@@ -104,15 +106,19 @@ public class ServerGroup {
      * @param name ServerGroup name to include in thread names
      * @param incomingAcceptorThreads number of acceptor threads per protocol
      * @param incomingWorkerThreads number of client-to-proxy worker threads per protocol
+     * @param separateProcessingEventLoop indicate if client to proxy processing threads should be initialized
+     * @param incomingWorkerProcessingThreads number of client-to-proxy processing threads per protocol
      * @param outgoingWorkerThreads number of proxy-to-server worker threads per protocol
      * @param proxyThreadPoolsObserver monitoring instance for thread pools
      */
-    public ServerGroup(String name, int incomingAcceptorThreads, int incomingWorkerThreads, int outgoingWorkerThreads,
+    public ServerGroup(String name, int incomingAcceptorThreads, int incomingWorkerThreads, boolean separateProcessingEventLoop, int incomingWorkerProcessingThreads, int outgoingWorkerThreads,
         ProxyThreadPoolsObserver proxyThreadPoolsObserver) {
         this.name = name;
         this.serverGroupId = serverGroupCount.getAndIncrement();
         this.incomingAcceptorThreads = incomingAcceptorThreads;
         this.incomingWorkerThreads = incomingWorkerThreads;
+        this.incomingWorkerProcessingThreads = incomingWorkerProcessingThreads;
+        this.separateProcessingEventLoop = separateProcessingEventLoop;
         this.outgoingWorkerThreads = outgoingWorkerThreads;
         this.proxyThreadPoolsObserver = proxyThreadPoolsObserver;
     }
@@ -149,6 +155,8 @@ public class ServerGroup {
                     ProxyThreadPools threadPools = new ProxyThreadPools(selectorProvider,
                             incomingAcceptorThreads,
                             incomingWorkerThreads,
+                            separateProcessingEventLoop,
+                            incomingWorkerProcessingThreads,
                             outgoingWorkerThreads,
                             name,
                             serverGroupId);

@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.log4j.LogManager;
@@ -23,6 +24,7 @@ import org.littleshoot.proxy.HttpFilters;
 import org.littleshoot.proxy.HttpFiltersAdapter;
 import org.littleshoot.proxy.HttpFiltersSourceAdapter;
 import org.littleshoot.proxy.HttpProxyServer;
+import org.littleshoot.proxy.HttpProxyServerBootstrap;
 import org.littleshoot.proxy.RequestTracer;
 import org.littleshoot.proxy.test.HttpClientUtil;
 import org.mockserver.integration.ClientAndServer;
@@ -60,7 +62,7 @@ public class SeparateProcessingThreadTest {
     Set<String> successResponseTraces = new ConcurrentHashSet<>();
     this.proxyServer = DefaultHttpProxyServer.bootstrap()
         .withPort(0)
-        .withSeparateProcessingEventLoop(true)
+        .withThreadPoolConfiguration(new ThreadPoolConfiguration().withSeparateProcessingEventLoop(true))
         .withAcceptorLoggingEnabled(true)
         .withRequestTracer(new RequestTracer() {
           @Override
@@ -175,7 +177,7 @@ public class SeparateProcessingThreadTest {
 
     this.proxyServer = DefaultHttpProxyServer.bootstrap()
         .withPort(0)
-        .withSeparateProcessingEventLoop(true)
+        .withThreadPoolConfiguration(new ThreadPoolConfiguration().withSeparateProcessingEventLoop(true))
         .withAcceptorLoggingEnabled(true)
         .withRequestTracer(new RequestTracer() {
           @Override
@@ -266,6 +268,81 @@ public class SeparateProcessingThreadTest {
 
     Set<String> readMessageLogs = appender.getLogsContains("Read message. trace id");
     Assert.assertEquals(requestsAmount, readMessageLogs.size());
+  }
+
+  @Test
+  public void testDefaultAmountOfProcessingThreads() throws InterruptedException {
+    int defaultProcessingThreads = 8;
+    this.proxyServer = getDefaultBootstrap()
+        .withThreadPoolConfiguration(new ThreadPoolConfiguration().withSeparateProcessingEventLoop(true))
+        .start();
+    sendRequests(20);
+    Assert.assertEquals(defaultProcessingThreads, appender.getThreadNames()
+        .stream()
+        .filter(v -> v.contains("ClientToProxyProcessorWorker"))
+        .collect(Collectors.toSet()).size());
+  }
+
+  @Test
+  public void testCustomAmountOfProcessingThreads() throws InterruptedException {
+    int processingThreadsAmount = 12;
+    this.proxyServer = getDefaultBootstrap()
+        .withThreadPoolConfiguration(new ThreadPoolConfiguration()
+            .withSeparateProcessingEventLoop(true)
+            .withClientToProxyWorkerProcessingThreads(processingThreadsAmount))
+        .start();
+    sendRequests(30);
+    Assert.assertEquals(processingThreadsAmount, appender.getThreadNames()
+        .stream()
+        .filter(v -> v.contains("ClientToProxyProcessorWorker"))
+        .collect(Collectors.toSet()).size());
+  }
+
+  private HttpProxyServerBootstrap getDefaultBootstrap() {
+    return DefaultHttpProxyServer.bootstrap()
+        .withPort(0)
+        .withAcceptorLoggingEnabled(true)
+        .withFiltersSource(new HttpFiltersSourceAdapter() {
+          @Override
+          public HttpFilters filterRequest(HttpRequest originalRequest, ChannelHandlerContext ctx) {
+            return new HttpFiltersAdapter(originalRequest, ctx) {
+              @Override
+              public io.netty.handler.codec.http.HttpResponse clientToProxyRequest(HttpObject httpObject) {
+                log.info("clientToProxyRequest");
+                return super.clientToProxyRequest(httpObject);
+              }
+            };
+          }
+
+          @Override
+          public int getMaximumRequestBufferSizeInBytes() {
+            return 1000000;
+          }
+
+          @Override
+          public int getMaximumResponseBufferSizeInBytes() {
+            return 1000000;
+          }
+        });
+  }
+
+  private void sendRequests(int requestsAmount) throws InterruptedException {
+    CountDownLatch countDownLatch = new CountDownLatch(requestsAmount);
+    Executor executor = Executors.newWorkStealingPool(20);
+    mockServer.when(org.mockserver.model.HttpRequest.request()
+            .withMethod("POST")
+            .withPath("/traceRequest/"))
+        .respond(HttpResponse.response()
+            .withStatusCode(200)
+            .withBody("{\"status\":\"OK\"}"));
+    for (int i = 0; i < requestsAmount; i++) {
+      executor.execute(() -> {
+        HttpClientUtil.performHttpPost(
+            "http://localhost:" + mockServerPort + "/traceRequest/", 100, proxyServer);
+        countDownLatch.countDown();
+      });
+    }
+    countDownLatch.await(2, TimeUnit.SECONDS);
   }
 
 

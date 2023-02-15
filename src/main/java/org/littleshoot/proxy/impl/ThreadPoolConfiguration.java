@@ -7,14 +7,17 @@ package org.littleshoot.proxy.impl;
 public class ThreadPoolConfiguration {
     private int acceptorThreads = ServerGroup.DEFAULT_INCOMING_ACCEPTOR_THREADS;
     private int clientToProxyWorkerThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
+    private int clientToProxyWorkerProcessingThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
     private int proxyToServerWorkerThreads = ServerGroup.DEFAULT_OUTGOING_WORKER_THREADS;
+    private boolean separateProcessingEventLoop = false;
 
     public int getClientToProxyWorkerThreads() {
         return clientToProxyWorkerThreads;
     }
 
     /**
-     * Set the number of client-to-proxy worker threads to create. Worker threads perform the actual processing of
+     * Set the number of client-to-proxy worker threads to create. Worker threads perform the actual read and 
+     * processing(if separateProcessingEventLoop is false) of
      * client requests. The default value is {@link ServerGroup#DEFAULT_INCOMING_WORKER_THREADS}.
      *
      * @param clientToProxyWorkerThreads number of client-to-proxy worker threads to create
@@ -22,6 +25,23 @@ public class ThreadPoolConfiguration {
      */
     public ThreadPoolConfiguration withClientToProxyWorkerThreads(int clientToProxyWorkerThreads) {
         this.clientToProxyWorkerThreads = clientToProxyWorkerThreads;
+        return this;
+    }
+
+    public int getClientToProxyWorkerProcessingThreads() {
+        return clientToProxyWorkerProcessingThreads;
+    }
+
+    /**
+     * Set the number of client-to-proxy processing threads to create. Processing threads perform the actual process.
+     * This property is taken into account only when separateProcessingEventLoop is true otherwise processing happened
+     * in clientToProxyWorker threads
+     * The default value is {@link ServerGroup#DEFAULT_INCOMING_WORKER_THREADS}.
+     * @param clientToProxyWorkerProcessingThreads amount of client-to-proxy processing threads
+     * @return this thread pool configuration instance, for chaining
+     */
+    public ThreadPoolConfiguration withClientToProxyWorkerProcessingThreads(int clientToProxyWorkerProcessingThreads) {
+        this.clientToProxyWorkerProcessingThreads = clientToProxyWorkerProcessingThreads;
         return this;
     }
 
@@ -59,4 +79,16 @@ public class ThreadPoolConfiguration {
         return this;
     }
 
+    public boolean isSeparateProcessingEventLoop() {
+        return separateProcessingEventLoop;
+    }
+
+    /**
+     * @param separateProcessingEventLoop indicate if separate threads only for processing should be initialized
+     * @return this thread pool configuration instance, for chaining
+     */
+    public ThreadPoolConfiguration withSeparateProcessingEventLoop(boolean separateProcessingEventLoop) {
+        this.separateProcessingEventLoop = separateProcessingEventLoop;
+        return this;
+    }
 }

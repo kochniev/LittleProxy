@@ -26,6 +26,11 @@ public class ProxyThreadPools {
     private final NioEventLoopGroup clientToProxyWorkerPool;
 
     /**
+     * This bool variable indicate that client to proxy processing pool initialized
+     */
+    private final boolean separateProcessingEventLoop;
+
+    /**
      * These {@link EventLoopGroup}s process incoming requests to the
      * proxies.
      */
@@ -38,17 +43,36 @@ public class ProxyThreadPools {
      */
     private final NioEventLoopGroup proxyToServerWorkerPool;
 
-    public ProxyThreadPools(SelectorProvider selectorProvider, int incomingAcceptorThreads, int incomingWorkerThreads, int outgoingWorkerThreads, String serverGroupName, int serverGroupId) {
-        clientToProxyAcceptorPool = new NioEventLoopGroup(incomingAcceptorThreads, new CategorizedThreadFactory(serverGroupName, "ClientToProxyAcceptor", serverGroupId), selectorProvider);
+    public ProxyThreadPools(SelectorProvider selectorProvider, int incomingAcceptorThreads, int incomingWorkerThreads,
+          boolean separateProcessingEventLoop, int incomingWorkerProcessingThreads, int outgoingWorkerThreads, 
+        String serverGroupName, int serverGroupId) {
+        clientToProxyAcceptorPool = new NioEventLoopGroup(incomingAcceptorThreads,
+            new CategorizedThreadFactory(serverGroupName, "ClientToProxyAcceptor", serverGroupId), selectorProvider);
 
-        clientToProxyWorkerPool = new NioEventLoopGroup(incomingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ClientToProxyWorker", serverGroupId), selectorProvider);
+        clientToProxyWorkerPool = new NioEventLoopGroup(incomingWorkerThreads,
+            new CategorizedThreadFactory(serverGroupName, "ClientToProxyWorker", serverGroupId), selectorProvider);
         clientToProxyWorkerPool.setIoRatio(90);
         
-        clientToProxyProcessingPool = new NioEventLoopGroup(incomingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ClientToProxyProcessorWorker", serverGroupId), selectorProvider);
-        clientToProxyProcessingPool.setIoRatio(90);
+        this.separateProcessingEventLoop = separateProcessingEventLoop;
+        this.clientToProxyProcessingPool = initClientToProxyProcessingPool(
+                separateProcessingEventLoop, incomingWorkerProcessingThreads,serverGroupName, serverGroupId, selectorProvider);
 
-        proxyToServerWorkerPool = new NioEventLoopGroup(outgoingWorkerThreads, new CategorizedThreadFactory(serverGroupName, "ProxyToServerWorker", serverGroupId), selectorProvider);
+        proxyToServerWorkerPool = new NioEventLoopGroup(outgoingWorkerThreads,
+            new CategorizedThreadFactory(serverGroupName, "ProxyToServerWorker", serverGroupId), selectorProvider);
         proxyToServerWorkerPool.setIoRatio(90);
+    }
+    
+    private NioEventLoopGroup initClientToProxyProcessingPool(
+        boolean separateProcessingEventLoop, int incomingWorkerProcessingThreads,
+        String serverGroupName, int serverGroupId, SelectorProvider selectorProvider) {
+        if (separateProcessingEventLoop) {
+            NioEventLoopGroup eventExecutors = new NioEventLoopGroup(incomingWorkerProcessingThreads,
+                new CategorizedThreadFactory(
+                    serverGroupName, "ClientToProxyProcessorWorker", serverGroupId), selectorProvider);
+            eventExecutors.setIoRatio(90);
+            return eventExecutors;
+        }
+        return null;
     }
 
     /**
@@ -72,5 +96,9 @@ public class ProxyThreadPools {
 
     public NioEventLoopGroup getProxyToServerWorkerPool() {
         return proxyToServerWorkerPool;
+    }
+
+    public boolean isSeparateProcessingEventLoop() {
+        return separateProcessingEventLoop;
     }
 }
