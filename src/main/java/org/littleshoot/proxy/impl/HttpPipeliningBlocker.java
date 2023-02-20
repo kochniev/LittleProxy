@@ -29,7 +29,7 @@ public class HttpPipeliningBlocker extends ChannelDuplexHandler {
       processRequest(ctx, request);
     } else {
       requestQueue.addLast(request);
-      logger.debug("One of the previous requests is already being processed. Added current request to the queue. "
+      logger.info("One of the previous requests is already being processed. Added current request to the queue. "
           + "Queue size: {}", requestQueue.size());
     }
   }
@@ -50,7 +50,7 @@ public class HttpPipeliningBlocker extends ChannelDuplexHandler {
       ctx.executor().execute(() -> {
         if (!requestIsBeingProcessed && !requestQueue.isEmpty()) {
           FullHttpRequest request = requestQueue.pollFirst();
-          logger.debug("Polled next request from the queue for processing. Queue size: {}", requestQueue.size());
+          logger.info("Polled next request from the queue for processing. Queue size: {}", requestQueue.size());
           processRequest(ctx, request);
         }
       });
